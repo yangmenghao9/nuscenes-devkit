@@ -260,6 +260,50 @@ def filter_eval_boxes(nusc: NuScenes,
 
     return eval_boxes
 
+def filter_boxes(nusc: NuScenes,
+                      eval_boxes: EvalBoxes,
+                      filter_condition: Dict[str, any],
+                      verbose: bool = False) -> EvalBoxes:
+    """
+    Applies filtering to boxes. Distance, bike-racks and points per box.
+    :param nusc: An instance of the NuScenes class.
+    :param eval_boxes: An instance of the EvalBoxes class.
+    :param max_dist: Maps the detection name to the eval distance threshold for that class.
+    :param verbose: Whether to print to stdout.
+    """
+    import copy
+    new_eval_boxes = copy.deepcopy(eval_boxes)
+    
+    # Retrieve box type for detectipn/tracking boxes.
+    class_field = _get_box_class_field(new_eval_boxes)
+
+    # Accumulators for number of filtered boxes.
+    total, dist_filter, speed_filter = 0, 0, 0
+    for ind, sample_token in enumerate(new_eval_boxes.sample_tokens):
+
+        # Filter on distance first.
+        total += len(new_eval_boxes[sample_token])
+        if "distance" in filter_condition.keys():
+            min_dist = filter_condition["distance"][0]
+            max_dist = filter_condition["distance"][1]
+            new_eval_boxes.boxes[sample_token] = [box for box in new_eval_boxes[sample_token] if
+                                            box.ego_dist >= min_dist and box.ego_dist <= max_dist]
+        dist_filter += len(new_eval_boxes[sample_token])
+
+        # Filter on speed.
+        if "speed" in filter_condition.keys():
+            min_speed = filter_condition["speed"][0]
+            max_speed = filter_condition["speed"][1]
+            new_eval_boxes.boxes[sample_token] = [box for box in new_eval_boxes[sample_token] if
+                                            box.speed >= min_speed and box.speed <= max_speed]
+        speed_filter += len(new_eval_boxes[sample_token])
+
+    if verbose:
+        print("=> Original number of boxes: %d" % total)
+        print("=> After distance based filtering: %d" % dist_filter)
+        print("=> After speed based filtering: %d" % speed_filter)
+    
+    return new_eval_boxes
 
 def _get_box_class_field(eval_boxes: EvalBoxes) -> str:
     """

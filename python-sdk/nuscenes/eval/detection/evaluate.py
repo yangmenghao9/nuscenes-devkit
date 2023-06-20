@@ -13,7 +13,7 @@ import numpy as np
 from nuscenes import NuScenes
 from nuscenes.eval.common.config import config_factory
 from nuscenes.eval.common.data_classes import EvalBoxes
-from nuscenes.eval.common.loaders import load_prediction, load_gt, add_center_dist, filter_eval_boxes
+from nuscenes.eval.common.loaders import load_prediction, load_gt, add_center_dist, filter_eval_boxes, filter_boxes
 from nuscenes.eval.detection.algo import accumulate, calc_ap, calc_tp
 from nuscenes.eval.detection.constants import TP_METRICS
 from nuscenes.eval.detection.data_classes import DetectionConfig, DetectionMetrics, DetectionBox, \
@@ -113,7 +113,7 @@ class DetectionEval:
         metric_data_list = DetectionMetricDataList()
         for class_name in self.cfg.class_names:
             for dist_th in self.cfg.dist_ths:
-                md = accumulate(self.gt_boxes, self.pred_boxes, class_name, self.cfg.dist_fcn_callable, dist_th)
+                md = accumulate(self.gt_boxes_filter, self.pred_boxes_filter, class_name, self.cfg.dist_fcn_callable, dist_th)
                 metric_data_list.set(class_name, dist_th, md)
 
         # -----------------------------------
@@ -173,17 +173,30 @@ class DetectionEval:
 
     def main(self,
              plot_examples: int = 0,
-             render_curves: bool = True) -> Dict[str, Any]:
+             render_curves: bool = True,
+             filter_condition: Dict = {}) -> Dict[str, Any]:
         """
         Main function that loads the evaluation code, visualizes samples, runs the evaluation and renders stat plots.
         :param plot_examples: How many example visualizations to write to disk.
         :param render_curves: Whether to render PR and TP curves to disk.
         :return: A dict that stores the high-level metrics and meta data.
         """
+
+        if len(filter_condition) != 0:
+            print('Filtering predictions')
+            self.pred_boxes_filter = filter_boxes(self.nusc, self.pred_boxes, filter_condition, verbose=True)
+            print('Filtering ground truth annotations')
+            self.gt_boxes_filter = filter_boxes(self.nusc, self.gt_boxes, filter_condition, verbose=True)
+        else:
+            self.pred_boxes_filter = self.pred_boxes
+            self.gt_boxes_filter = self.gt_boxes
+
+        self.sample_tokens_filter = self.gt_boxes_filter.sample_tokens
+
         if plot_examples > 0:
             # Select a random but fixed subset to plot.
             random.seed(42)
-            sample_tokens = list(self.sample_tokens)
+            sample_tokens = list(self.sample_tokens_filter)
             random.shuffle(sample_tokens)
             sample_tokens = sample_tokens[:plot_examples]
 
@@ -194,9 +207,9 @@ class DetectionEval:
             for sample_token in sample_tokens:
                 visualize_sample(self.nusc,
                                  sample_token,
-                                 self.gt_boxes if self.eval_set != 'test' else EvalBoxes(),
+                                 self.gt_boxes_filter if self.eval_set != 'test' else EvalBoxes(),
                                  # Don't render test GT.
-                                 self.pred_boxes,
+                                 self.pred_boxes_filter,
                                  eval_range=max(self.cfg.class_range.values()),
                                  savepath=os.path.join(example_dir, '{}.png'.format(sample_token)))
 

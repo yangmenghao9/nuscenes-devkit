@@ -54,6 +54,11 @@ class EvalBox(abc.ABC):
     def ego_dist(self) -> float:
         """ Compute the distance from this box to the ego vehicle in 2D. """
         return np.sqrt(np.sum(np.array(self.ego_translation[:2]) ** 2))
+    
+    @property
+    def speed(self) -> float:
+        """ Compute the distance from this box to the ego vehicle in 2D. """
+        return np.sqrt(np.sum(np.array(self.velocity) ** 2))
 
     def __repr__(self):
         return str(self.serialize())
