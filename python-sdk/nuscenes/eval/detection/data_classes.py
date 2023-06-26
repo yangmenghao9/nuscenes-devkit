@@ -9,7 +9,8 @@ import numpy as np
 from nuscenes.eval.common.data_classes import MetricData, EvalBox
 from nuscenes.eval.common.utils import center_distance
 from nuscenes.eval.detection.constants import DETECTION_NAMES, ATTRIBUTE_NAMES, TP_METRICS
-
+from nuscenes.utils.data_classes import Box
+from pyquaternion import Quaternion
 
 class DetectionConfig:
     """ Data class that specifies the detection evaluation settings. """
@@ -369,6 +370,18 @@ class DetectionBox(EvalBox):
             'detection_score': self.detection_score,
             'attribute_name': self.attribute_name
         }
+
+    def tobox(self) -> Box:
+        box = Box(self.translation,
+                self.size,
+                Quaternion(self.rotation),
+                1,
+                self.detection_score,
+                (np.nan, np.nan, np.nan),
+                self.detection_name,
+                self.sample_token)
+
+        return box
 
     @classmethod
     def deserialize(cls, content: dict):

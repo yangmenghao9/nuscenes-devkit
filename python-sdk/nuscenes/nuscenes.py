@@ -29,6 +29,7 @@ from nuscenes.utils.data_io import load_bin_file, panoptic_to_lidarseg
 from nuscenes.utils.geometry_utils import view_points, box_in_image, BoxVisibility, transform_matrix
 from nuscenes.utils.map_mask import MapMask
 from nuscenes.utils.color_map import get_colormap
+from nuscenes.eval.common.data_classes import EvalBoxes
 
 PYTHON_VERSION = sys.version_info[0]
 
@@ -578,10 +579,20 @@ class NuScenes:
     def render_scene(self, scene_token: str, freq: float = 10, imsize: Tuple[float, float] = (640, 360),
                      out_path: str = None) -> None:
         self.explorer.render_scene(scene_token, freq, imsize, out_path)
+    
+    def render_scene_prediction(self, scene_token: str, freq: float = 10, imsize: Tuple[float, float] = (640, 360),
+                     out_path: str = None, display_ground_truth: bool = False, pred_results: EvalBoxes = None, socre: float = 0.2) -> None:
+        self.explorer.render_scene_prediction(scene_token, freq, imsize, out_path, display_ground_truth, pred_results, socre)
 
     def render_scene_channel(self, scene_token: str, channel: str = 'CAM_FRONT', freq: float = 10,
                              imsize: Tuple[float, float] = (640, 360), out_path: str = None) -> None:
         self.explorer.render_scene_channel(scene_token, channel=channel, freq=freq, imsize=imsize, out_path=out_path)
+
+    def render_scene_channel_prediction(self, scene_token: str, channel: str = 'CAM_FRONT', freq: float = 10,
+                             imsize: Tuple[float, float] = (640, 360), out_path: str = None, display_ground_truth: bool = False,
+                             pred_results: EvalBoxes = None, socre: float = 0.2) -> None:
+        self.explorer.render_scene_channel_prediction(scene_token, channel=channel, freq=freq, imsize=imsize, out_path=out_path, 
+                                display_ground_truth=display_ground_truth, pred_results=pred_results, socre=socre)
 
     def render_egoposes_on_map(self, log_location: str, scene_tokens: List = None, out_path: str = None) -> None:
         self.explorer.render_egoposes_on_map(log_location, scene_tokens, out_path=out_path)
@@ -639,6 +650,19 @@ class NuScenesExplorer:
 
     def __init__(self, nusc: NuScenes):
         self.nusc = nusc
+        self.classname_to_color = {  # RGB.
+            "pedestrian": (0, 0, 230),  # Blue
+            "car": (255, 158, 0),  # Orange
+            "traffic_cone": (47, 79, 79),  # Darkslategrey
+            "bicycle": (220, 20, 60),  # Crimson
+            "truck": (255, 99, 71),  # Tomato
+            "bus": (255, 127, 80),  # Coral
+            "motorcycle": (255, 61, 99),  # Red
+            "construction_vehicle": (233, 150, 70),  # Darksalmon
+            "barrier": (112, 128, 144),  # Slategrey
+            "trailer": (255, 140, 0),  # Darkorange
+            "noise": (0, 0, 0),  # Black.
+        }
 
     def get_color(self, category_name: str) -> Tuple[int, int, int]:
         """
@@ -1696,6 +1720,274 @@ class NuScenesExplorer:
                 key = cv2.waitKey()
 
             if key == 27:  # if ESC is pressed, exit.
+                cv2.destroyAllWindows()
+                break
+
+        cv2.destroyAllWindows()
+        if out_path is not None:
+            out.release()
+    
+    def render_scene_prediction(self,
+                     scene_token: str,
+                     freq: float = 10,
+                     imsize: Tuple[float, float] = (640, 360),
+                     out_path: str = None,
+                     display_ground_truth: bool = False,
+                     pred_results: EvalBoxes = None,
+                     socre: float = 0.2) -> None:
+        """
+        Renders a full scene with all camera channels.
+        :param scene_token: Unique identifier of scene to render.
+        :param freq: Display frequency (Hz).
+        :param imsize: Size of image to render. The larger the slower this will run.
+        :param out_path: Optional path to write a video file of the rendered frames.
+        """
+
+        assert imsize[0] / imsize[1] == 16 / 9, "Aspect ratio should be 16/9."
+
+        if out_path is not None:
+            assert osp.splitext(out_path)[-1] == '.avi'
+
+        # Get records from DB.
+        scene_rec = self.nusc.get('scene', scene_token)
+        first_sample_rec = self.nusc.get('sample', scene_rec['first_sample_token'])
+        last_sample_rec = self.nusc.get('sample', scene_rec['last_sample_token'])
+
+        # Set some display parameters.
+        layout = {
+            'CAM_FRONT_LEFT': (0, 0),
+            'CAM_FRONT': (imsize[0], 0),
+            'CAM_FRONT_RIGHT': (2 * imsize[0], 0),
+            'CAM_BACK_LEFT': (0, imsize[1]),
+            'CAM_BACK': (imsize[0], imsize[1]),
+            'CAM_BACK_RIGHT': (2 * imsize[0], imsize[1]),
+        }
+
+        horizontal_flip = ['CAM_BACK_LEFT', 'CAM_BACK', 'CAM_BACK_RIGHT']  # Flip these for aesthetic reasons.
+
+        window_name = '{}'.format(scene_rec['name'])
+        cv2.namedWindow(window_name)
+        cv2.moveWindow(window_name, 0, 0)
+
+        canvas = np.ones((2 * imsize[1], 3 * imsize[0], 3), np.uint8)
+        if out_path is not None:
+            fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+            out = cv2.VideoWriter(out_path, fourcc, freq, canvas.shape[1::-1])
+        else:
+            out = None
+
+        # Load first sample_data record for each channel.
+        current_recs = {}  # Holds the current record to be displayed by channel.
+        prev_recs = {}  # Hold the previous displayed record by channel.
+        for channel in layout:
+            current_recs[channel] = self.nusc.get('sample_data', first_sample_rec['data'][channel])
+            prev_recs[channel] = None
+
+        sample_rec = first_sample_rec
+
+        box_vis_level=BoxVisibility.ANY
+        has_more_frames = True
+        while has_more_frames:
+
+
+            # get prediction box
+            pred_boxes = pred_results.boxes[sample_rec['token']]
+
+            # get each channel sample_data token according sample token
+            for channel, sd_rec in current_recs.items():
+                current_recs[channel] = self.nusc.get('sample_data', sample_rec['data'][channel])
+
+            if not sample_rec['next'] == "":
+                sample_rec = self.nusc.get('sample', sample_rec['next'])
+            else:
+                has_more_frames = False
+
+            # Now add to canvas
+            for channel, sd_rec in current_recs.items():
+    
+                # Only update canvas if we have not already rendered this one.
+                if not sd_rec == prev_recs[channel]:
+    
+                    # Get annotations and params from DB.
+                    impath, boxes, camera_intrinsic = self.nusc.get_sample_data(sd_rec['token'],
+                                                                                box_vis_level=BoxVisibility.ANY)
+
+                    sd_record = self.nusc.get('sample_data', sd_rec['token'])
+                    cs_record = self.nusc.get('calibrated_sensor', sd_record['calibrated_sensor_token'])
+                    sensor_record = self.nusc.get('sensor', cs_record['sensor_token'])
+                    pose_record = self.nusc.get('ego_pose', sd_record['ego_pose_token'])
+                    if sensor_record['modality'] == 'camera':
+                        draw_size = (sd_record['width'], sd_record['height'])
+                    else:
+                        draw_size = None
+
+                    # Load and render.
+                    if not osp.exists(impath):
+                        raise Exception('Error: Missing image %s' % impath)
+                    im = cv2.imread(impath)
+                    if display_ground_truth:
+                        for box in boxes:
+                            # c = self.get_color(box.name)
+                            c = (0, 255, 0)
+                            box.render_cv2(im, view=camera_intrinsic, normalize=True, colors=(c, c, c))
+                    if len(pred_boxes) != 0:
+                        for pred_box in pred_boxes:
+                            if pred_box.detection_score < socre:
+                                continue
+                            box = pred_box.tobox()
+
+                            # Move box to ego vehicle coord system.
+                            box.translate(-np.array(pose_record['translation']))
+                            box.rotate(Quaternion(pose_record['rotation']).inverse)
+
+                            #  Move box to sensor coord system.
+                            box.translate(-np.array(cs_record['translation']))
+                            box.rotate(Quaternion(cs_record['rotation']).inverse)
+                            if sensor_record['modality'] == 'camera' and not \
+                                    box_in_image(box, camera_intrinsic, draw_size, vis_level=box_vis_level):
+                                continue
+                            c = self.classname_to_color[box.name]
+                            if display_ground_truth:
+                                c = (0, 0, 255)
+                            box.render_cv2(im, view=camera_intrinsic, normalize=True, colors=(c, c, c))
+
+                    im = cv2.resize(im, imsize)
+                    if channel in horizontal_flip:
+                        im = im[:, ::-1, :]
+
+                    canvas[
+                        layout[channel][1]: layout[channel][1] + imsize[1],
+                        layout[channel][0]:layout[channel][0] + imsize[0], :
+                    ] = im
+
+                    prev_recs[channel] = sd_rec  # Store here so we don't render the same image twice.
+
+            # Show updated canvas.
+            cv2.imshow(window_name, canvas)
+            if out_path is not None:
+                out.write(canvas)
+
+            key = cv2.waitKey(1)  # Wait a very short time (1 ms).
+
+            if key == 32:  # if space is pressed, pause.
+                key = cv2.waitKey()
+
+            if key == 27:  # if ESC is pressed, exit.
+                cv2.destroyAllWindows()
+                break
+
+        cv2.destroyAllWindows()
+        if out_path is not None:
+            out.release()
+
+    def render_scene_channel_prediction(self,
+                             scene_token: str,
+                             channel: str = 'CAM_FRONT',
+                             freq: float = 10,
+                             imsize: Tuple[float, float] = (640, 360),
+                             out_path: str = None,
+                             display_ground_truth: bool = False,
+                             pred_results: EvalBoxes = None,
+                             socre: float = 0.2) -> None:
+        """
+        Renders a full scene for a particular camera channel.
+        :param scene_token: Unique identifier of scene to render.
+        :param channel: Channel to render.
+        :param freq: Display frequency (Hz).
+        :param imsize: Size of image to render. The larger the slower this will run.
+        :param out_path: Optional path to write a video file of the rendered frames.
+        """
+
+        valid_channels = ['CAM_FRONT_LEFT', 'CAM_FRONT', 'CAM_FRONT_RIGHT',
+                          'CAM_BACK_LEFT', 'CAM_BACK', 'CAM_BACK_RIGHT']
+
+        assert imsize[0] / imsize[1] == 16 / 9, "Error: Aspect ratio should be 16/9."
+        assert channel in valid_channels, 'Error: Input channel {} not valid.'.format(channel)
+
+        if out_path is not None:
+            assert osp.splitext(out_path)[-1] == '.avi'
+
+        # Get records from DB.
+        scene_rec = self.nusc.get('scene', scene_token)
+        sample_rec = self.nusc.get('sample', scene_rec['first_sample_token'])
+        sd_rec = self.nusc.get('sample_data', sample_rec['data'][channel])
+
+        # Open CV init.
+        name = '{}: {} (Space to pause, ESC to exit)'.format(scene_rec['name'], channel)
+        cv2.namedWindow(name)
+        cv2.moveWindow(name, 0, 0)
+
+        if out_path is not None:
+            fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+            out = cv2.VideoWriter(out_path, fourcc, freq, imsize)
+        else:
+            out = None
+
+        has_more_frames = True
+        num = -1
+        while has_more_frames:
+
+            pred_boxes = pred_results.boxes[sample_rec['token']]
+            sd_rec = self.nusc.get('sample_data', sample_rec['data'][channel])
+
+            # Get data from DB.
+            impath, boxes, camera_intrinsic = self.nusc.get_sample_data(sd_rec['token'],
+                                                                        box_vis_level=BoxVisibility.ANY)
+
+            if not sample_rec['next'] == "":
+                sample_rec = self.nusc.get('sample', sample_rec['next'])
+            else:
+                has_more_frames = False
+
+            
+            sd_record = self.nusc.get('sample_data', sd_rec['token'])
+            cs_record = self.nusc.get('calibrated_sensor', sd_record['calibrated_sensor_token'])
+            sensor_record = self.nusc.get('sensor', cs_record['sensor_token'])
+            pose_record = self.nusc.get('ego_pose', sd_record['ego_pose_token'])
+            if sensor_record['modality'] == 'camera':
+                draw_size = (sd_record['width'], sd_record['height'])
+            else:
+                draw_size = None
+            box_vis_level=BoxVisibility.ANY
+
+            # Load and render.
+            if not osp.exists(impath):
+                raise Exception('Error: Missing image %s' % impath)
+            im = cv2.imread(impath)
+            if display_ground_truth:
+                for box in boxes:
+                    c = self.get_color(box.name)
+                    box.render_cv2(im, view=camera_intrinsic, normalize=True, colors=(c, c, c))
+            if len(pred_boxes) != 0:
+                for pred_box in pred_boxes:
+                    if pred_box.detection_score < socre:
+                        continue
+                    box = pred_box.tobox()
+
+                    # Move box to ego vehicle coord system.
+                    box.translate(-np.array(pose_record['translation']))
+                    box.rotate(Quaternion(pose_record['rotation']).inverse)
+
+                    #  Move box to sensor coord system.
+                    box.translate(-np.array(cs_record['translation']))
+                    box.rotate(Quaternion(cs_record['rotation']).inverse)
+                    if sensor_record['modality'] == 'camera' and not \
+                            box_in_image(box, camera_intrinsic, draw_size, vis_level=box_vis_level):
+                        continue
+                    c = self.classname_to_color[box.name]
+                    box.render_cv2(im, view=camera_intrinsic, normalize=True, colors=(c, c, c))
+
+            # Render.
+            im = cv2.resize(im, imsize)
+            cv2.imshow(name, im)
+            if out_path is not None:
+                out.write(im)
+
+            key = cv2.waitKey(10)  # Images stored at approx 10 Hz, so wait 10 ms.
+            if key == 32:  # If space is pressed, pause.
+                key = cv2.waitKey()
+
+            if key == 27:  # If ESC is pressed, exit.
                 cv2.destroyAllWindows()
                 break
 

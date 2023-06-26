@@ -45,6 +45,23 @@ Welcome to the devkit of the [nuScenes](https://www.nuscenes.org/nuscenes) and [
 - Oct. 4, 2018: Code to parse RADAR data released.
 - Sep. 12, 2018: Devkit for teaser dataset released.
 
+## Usage
+
+```sh
+# install the devkit
+cd setup
+python setup.py install
+
+cd sample
+# edit the script according to the path of your nuScenes dataset and model result json
+# display model inference result
+./nuscenes_display.sh
+
+# analyze model inference result
+./nuscenes_analysis.sh
+```
+
+
 ## Devkit setup
 We use a common devkit for nuScenes and nuImages.
 The devkit is tested for Python 3.6 and Python 3.7.
