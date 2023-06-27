@@ -581,8 +581,8 @@ class NuScenes:
         self.explorer.render_scene(scene_token, freq, imsize, out_path)
     
     def render_scene_prediction(self, scene_token: str, freq: float = 10, imsize: Tuple[float, float] = (640, 360),
-                     out_path: str = None, display_ground_truth: bool = False, pred_results: EvalBoxes = None, socre: float = 0.2) -> None:
-        self.explorer.render_scene_prediction(scene_token, freq, imsize, out_path, display_ground_truth, pred_results, socre)
+                     out_path: str = None, display_ground_truth: bool = False, pred_results: EvalBoxes = None, socre: float = 0.2, show: bool = True) -> None:
+        self.explorer.render_scene_prediction(scene_token, freq, imsize, out_path, display_ground_truth, pred_results, socre, show)
 
     def render_scene_channel(self, scene_token: str, channel: str = 'CAM_FRONT', freq: float = 10,
                              imsize: Tuple[float, float] = (640, 360), out_path: str = None) -> None:
@@ -1734,7 +1734,8 @@ class NuScenesExplorer:
                      out_path: str = None,
                      display_ground_truth: bool = False,
                      pred_results: EvalBoxes = None,
-                     socre: float = 0.2) -> None:
+                     socre: float = 0.2,
+                     show: bool = True) -> None:
         """
         Renders a full scene with all camera channels.
         :param scene_token: Unique identifier of scene to render.
@@ -1766,8 +1767,9 @@ class NuScenesExplorer:
         horizontal_flip = ['CAM_BACK_LEFT', 'CAM_BACK', 'CAM_BACK_RIGHT']  # Flip these for aesthetic reasons.
 
         window_name = '{}'.format(scene_rec['name'])
-        cv2.namedWindow(window_name)
-        cv2.moveWindow(window_name, 0, 0)
+        if show:
+            cv2.namedWindow(window_name)
+            cv2.moveWindow(window_name, 0, 0)
 
         canvas = np.ones((2 * imsize[1], 3 * imsize[0], 3), np.uint8)
         if out_path is not None:
@@ -1862,21 +1864,23 @@ class NuScenesExplorer:
 
                     prev_recs[channel] = sd_rec  # Store here so we don't render the same image twice.
 
-            # Show updated canvas.
-            cv2.imshow(window_name, canvas)
             if out_path is not None:
                 out.write(canvas)
+            if show:
+                # Show updated canvas.
+                cv2.imshow(window_name, canvas)
 
-            key = cv2.waitKey(1)  # Wait a very short time (1 ms).
+                key = cv2.waitKey(1)  # Wait a very short time (1 ms).
 
-            if key == 32:  # if space is pressed, pause.
-                key = cv2.waitKey()
+                if key == 32:  # if space is pressed, pause.
+                    key = cv2.waitKey()
 
-            if key == 27:  # if ESC is pressed, exit.
-                cv2.destroyAllWindows()
-                break
+                if key == 27:  # if ESC is pressed, exit.
+                    cv2.destroyAllWindows()
+                    break
 
-        cv2.destroyAllWindows()
+        if show:
+            cv2.destroyAllWindows()
         if out_path is not None:
             out.release()
 

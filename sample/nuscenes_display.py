@@ -13,9 +13,9 @@ def nuscenes_display():
     pred_boxes, meta = load_prediction(result_path_, 500, DetectionBox,
                                                         verbose=True)
     if version_ == "v1.0-trainval":
-        scenes = random.sample(val, 3)
+        scenes = random.sample(val, sample_num_)
     else:
-        scenes = mini_val
+        scenes = random.sample(mini_val, sample_num_)
     print("display scenes: ", scenes)
     for scene in scenes:
         output_path = None
@@ -25,20 +25,15 @@ def nuscenes_display():
             output_path = os.path.join(output_dir_, "%s.avi"%scene)
         my_scene_token = nusc.field2token('scene', 'name', scene)[0]
 
-        # display single channel prediction
-        # nusc.render_scene_channel_prediction(my_scene_token, 
-        #                                     'CAM_FRONT', 
-        #                                     out_path=output_path, 
-        #                                     display_ground_truth=True, 
-        #                                     pred_results=pred_boxes, 
-        #                                     score=score_)
-
+        if not show_:
+            print("Processing %s, but not displaying"%scene)
         # display multi channel prediction
         nusc.render_scene_prediction(my_scene_token, 
                                     out_path=output_path, 
-                                    display_ground_truth=False, 
+                                    display_ground_truth=compare_gt_, 
                                     pred_results=pred_boxes, 
-                                    socre=score_)
+                                    socre=score_,
+                                    show=show_)
 
 
 if __name__ == "__main__":
@@ -55,6 +50,10 @@ if __name__ == "__main__":
                         help='Which version of the nuScenes dataset to evaluate on, e.g. v1.0-trainval.')
     parser.add_argument('--score', type=float, default=0.2,
                         help='Filter the score of the target')
+    parser.add_argument('--sample_num', type=int, default=2,
+                        help='The number you want to output')
+    parser.add_argument('--compare_gt', action='store_true', help='Compare with ground truth')
+    parser.add_argument('--show', action='store_true', help='Display results')
     args = parser.parse_args()
 
     result_path_ = args.result_path
@@ -62,5 +61,8 @@ if __name__ == "__main__":
     dataroot_ = args.dataroot
     version_ = args.version
     score_ = args.score
+    sample_num_ = args.sample_num
+    compare_gt_ = args.compare_gt
+    show_ = args.show
 
     nuscenes_display()
