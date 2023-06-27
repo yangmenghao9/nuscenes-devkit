@@ -278,7 +278,7 @@ def filter_boxes(nusc: NuScenes,
     class_field = _get_box_class_field(new_eval_boxes)
 
     # Accumulators for number of filtered boxes.
-    total, dist_filter, speed_filter = 0, 0, 0
+    total, dist_filter, speed_filter, category_filter = 0, 0, 0, 0
     for ind, sample_token in enumerate(new_eval_boxes.sample_tokens):
 
         # Filter on distance first.
@@ -298,10 +298,16 @@ def filter_boxes(nusc: NuScenes,
                                             box.speed >= min_speed and box.speed <= max_speed]
         speed_filter += len(new_eval_boxes[sample_token])
 
+        if "category" in filter_condition.keys():
+            new_eval_boxes.boxes[sample_token] = [box for box in new_eval_boxes[sample_token] if
+                                            box.detection_name in filter_condition["category"]]
+        category_filter += len(new_eval_boxes[sample_token])
+
     if verbose:
         print("=> Original number of boxes: %d" % total)
         print("=> After distance based filtering: %d" % dist_filter)
         print("=> After speed based filtering: %d" % speed_filter)
+        print("=> After category based filtering: %d" % category_filter)
     
     return new_eval_boxes
 

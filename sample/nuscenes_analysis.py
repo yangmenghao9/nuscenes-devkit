@@ -25,27 +25,25 @@ def analysis_condition():
     )
 
     # conditional analysis
-    distance_gap = 10
-    for i in range (5):
-        min_distance = i * distance_gap
-        max_distance = (i + 1) * distance_gap
-        filter_condition = {"distance": [min_distance, max_distance]}
+    condition_list = [
+                    {"distance": [0, 10]},
+                    {"distance": [10, 20]},
+                    {"distance": [20, 30]},
+                    {"distance": [30, 40]},
+                    {"distance": [40, 50]},
+                    {"category": ["car", "truck", "bus", "construction_vehicle", "trailer"], "speed": [0, 5]},
+                    {"category": ["car", "truck", "bus", "construction_vehicle", "trailer"], "speed": [5, 10]},
+                    {"category": ["car", "truck", "bus", "construction_vehicle", "trailer"], "speed": [10, 20]},
+                    {"category": ["pedestrian", "bicycle", "motorcycle"], "speed": [0, 2]},
+                    {"category": ["pedestrian", "bicycle", "motorcycle"], "speed": [2, 10]},
+                    ]
 
-        print('\n\n############filter_condition####################')
+    for filter_condition in condition_list:
+        print('\n\n############ filter_condition ####################')
         print(filter_condition)
-        print('#############################################')
         metrics_summary = nusc_eval.main(plot_examples=plot_examples_, render_curves=render_curves_, filter_condition=filter_condition)
-
-    speed_gap = 5
-    for i in range (5):
-        min_speed = i * speed_gap
-        max_speed = (i + 1) * speed_gap
-        filter_condition = {"speed": [min_speed, max_speed]}
-
-        print('\n\n############filter_condition####################')
-        print(filter_condition)
-        print('#############################################')
-        metrics_summary = nusc_eval.main(plot_examples=plot_examples_, render_curves=render_curves_, filter_condition=filter_condition)
+    
+    print('\n\n############ metrics_summary ####################')
     metrics_summary = nusc_eval.main(plot_examples=plot_examples_, render_curves=render_curves_)
 
 if __name__ == "__main__":
