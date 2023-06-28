@@ -30,6 +30,7 @@ from nuscenes.utils.geometry_utils import view_points, box_in_image, BoxVisibili
 from nuscenes.utils.map_mask import MapMask
 from nuscenes.utils.color_map import get_colormap
 from nuscenes.eval.common.data_classes import EvalBoxes
+from nuscenes.eval.detection.render import get_visualize_sample
 
 PYTHON_VERSION = sys.version_info[0]
 
@@ -579,10 +580,12 @@ class NuScenes:
     def render_scene(self, scene_token: str, freq: float = 10, imsize: Tuple[float, float] = (640, 360),
                      out_path: str = None) -> None:
         self.explorer.render_scene(scene_token, freq, imsize, out_path)
-    
+
     def render_scene_prediction(self, scene_token: str, freq: float = 10, imsize: Tuple[float, float] = (640, 360),
-                     out_path: str = None, display_ground_truth: bool = False, pred_results: EvalBoxes = None, socre: float = 0.2, show: bool = True) -> None:
-        self.explorer.render_scene_prediction(scene_token, freq, imsize, out_path, display_ground_truth, pred_results, socre, show)
+                     out_path: str = None, pred_results: EvalBoxes = None, gt_results: EvalBoxes = None,
+                     display_ground_truth: bool = False, socre: float = 0.15, show: bool = True) -> None:
+        self.explorer.render_scene_prediction(scene_token, freq, imsize, out_path, pred_results, gt_results, 
+                                            display_ground_truth, socre, show)
 
     def render_scene_channel(self, scene_token: str, channel: str = 'CAM_FRONT', freq: float = 10,
                              imsize: Tuple[float, float] = (640, 360), out_path: str = None) -> None:
@@ -590,7 +593,7 @@ class NuScenes:
 
     def render_scene_channel_prediction(self, scene_token: str, channel: str = 'CAM_FRONT', freq: float = 10,
                              imsize: Tuple[float, float] = (640, 360), out_path: str = None, display_ground_truth: bool = False,
-                             pred_results: EvalBoxes = None, socre: float = 0.2) -> None:
+                             pred_results: EvalBoxes = None, socre: float = 0.15) -> None:
         self.explorer.render_scene_channel_prediction(scene_token, channel=channel, freq=freq, imsize=imsize, out_path=out_path, 
                                 display_ground_truth=display_ground_truth, pred_results=pred_results, socre=socre)
 
@@ -1728,13 +1731,14 @@ class NuScenesExplorer:
             out.release()
     
     def render_scene_prediction(self,
-                     scene_token: str,
-                     freq: float = 10,
+                     scene_token: str, 
+                     freq: float = 10, 
                      imsize: Tuple[float, float] = (640, 360),
-                     out_path: str = None,
-                     display_ground_truth: bool = False,
+                     out_path: str = None, 
                      pred_results: EvalBoxes = None,
-                     socre: float = 0.2,
+                     gt_results: EvalBoxes = None,
+                     display_ground_truth: bool = False, 
+                     socre: float = 0.15, 
                      show: bool = True) -> None:
         """
         Renders a full scene with all camera channels.
@@ -1772,9 +1776,10 @@ class NuScenesExplorer:
             cv2.moveWindow(window_name, 0, 0)
 
         canvas = np.ones((2 * imsize[1], 3 * imsize[0], 3), np.uint8)
+        shape = (canvas.shape[0] + canvas.shape[1], canvas.shape[0])
         if out_path is not None:
             fourcc = cv2.VideoWriter_fourcc(*'MJPG')
-            out = cv2.VideoWriter(out_path, fourcc, freq, canvas.shape[1::-1])
+            out = cv2.VideoWriter(out_path, fourcc, freq, shape)
         else:
             out = None
 
@@ -1791,7 +1796,15 @@ class NuScenesExplorer:
         has_more_frames = True
         while has_more_frames:
 
-
+            print("Processing: sample: ", sample_rec['token'])
+            # get lidar image
+            lidar_image = get_visualize_sample(self.nusc,
+                                 sample_rec['token'],
+                                 gt_results,
+                                 pred_results,
+                                 conf_th=socre,
+                                 display_ground_truth=display_ground_truth
+                                 )
             # get prediction box
             pred_boxes = pred_results.boxes[sample_rec['token']]
 
@@ -1864,11 +1877,14 @@ class NuScenesExplorer:
 
                     prev_recs[channel] = sd_rec  # Store here so we don't render the same image twice.
 
+            lidar_image = cv2.resize(lidar_image, (shape[1], shape[1]))
+            lidar_image = cv2.cvtColor(lidar_image, cv2.COLOR_RGB2BGR)
+            canvas_fusion = np.hstack([canvas, lidar_image])
             if out_path is not None:
-                out.write(canvas)
+                out.write(canvas_fusion)
             if show:
                 # Show updated canvas.
-                cv2.imshow(window_name, canvas)
+                cv2.imshow(window_name, canvas_fusion)
 
                 key = cv2.waitKey(1)  # Wait a very short time (1 ms).
 
@@ -1892,7 +1908,7 @@ class NuScenesExplorer:
                              out_path: str = None,
                              display_ground_truth: bool = False,
                              pred_results: EvalBoxes = None,
-                             socre: float = 0.2) -> None:
+                             socre: float = 0.15) -> None:
         """
         Renders a full scene for a particular camera channel.
         :param scene_token: Unique identifier of scene to render.

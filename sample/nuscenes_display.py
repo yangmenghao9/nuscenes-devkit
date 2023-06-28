@@ -1,17 +1,30 @@
 from nuscenes.nuscenes import NuScenes
 from nuscenes.eval.detection.data_classes import DetectionBox
-from nuscenes.eval.common.loaders import load_prediction
 from nuscenes.utils.splits import val, mini_val
+from nuscenes.eval.detection.config import config_factory
+from nuscenes.eval.common.loaders import load_prediction, load_gt, add_center_dist, filter_eval_boxes
 import argparse
 import random
 import os
 
 def nuscenes_display():
-
+    
     nusc = NuScenes(version=version_, dataroot=dataroot_, verbose=True)
 
-    pred_boxes, meta = load_prediction(result_path_, 500, DetectionBox,
-                                                        verbose=True)
+    eval_set_map = {
+        'v1.0-mini': 'mini_val',
+        'v1.0-trainval': 'val',
+        'v1.0-test': 'test'
+        }
+
+    eval_version = 'detection_cvpr_2019'
+    eval_config = config_factory(eval_version)
+
+    pred_results, _ = load_prediction(result_path_, 500, DetectionBox)
+    gt_results = load_gt(nusc, eval_set_map[version_], DetectionBox)
+    gt_results = add_center_dist(nusc, gt_results)
+    gt_results = filter_eval_boxes(nusc, gt_results, eval_config.class_range)
+
     if version_ == "v1.0-trainval":
         scenes = random.sample(val, sample_num_)
     else:
@@ -31,7 +44,8 @@ def nuscenes_display():
         nusc.render_scene_prediction(my_scene_token, 
                                     out_path=output_path, 
                                     display_ground_truth=compare_gt_, 
-                                    pred_results=pred_boxes, 
+                                    pred_results=pred_results,
+                                    gt_results=gt_results,
                                     socre=score_,
                                     show=show_)
 
@@ -48,7 +62,7 @@ if __name__ == "__main__":
                         help='Default nuScenes data directory.')
     parser.add_argument('--version', type=str, default='v1.0-trainval',
                         help='Which version of the nuScenes dataset to evaluate on, e.g. v1.0-trainval.')
-    parser.add_argument('--score', type=float, default=0.2,
+    parser.add_argument('--score', type=float, default=0.15,
                         help='Filter the score of the target')
     parser.add_argument('--sample_num', type=int, default=2,
                         help='The number you want to output')

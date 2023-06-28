@@ -50,6 +50,7 @@ Welcome to the devkit of the [nuScenes](https://www.nuscenes.org/nuscenes) and [
 ```sh
 # install the devkit
 cd setup
+pip install -r requirements.txt
 python setup.py install
 
 cd sample
